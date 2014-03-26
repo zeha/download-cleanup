@@ -6,6 +6,7 @@ folder that are no longer referenced by any resumable torrents.
 """
 
 import os
+import re
 import sys
 import json
 import logging
@@ -21,6 +22,7 @@ argparser.add_argument('--debug', action='store_true', default=False)
 argparser.add_argument('--transmission-dir', type=unicode, help='Transmission state/config dir (auto-detected)')
 argparser.add_argument('--download-dir', type=unicode, help='Download directory (auto-detected)')
 argparser.add_argument('--move-to', type=unicode, help='If given, leftover files/dirs are moved to this path')
+argparser.add_argument('--ignore', help='Ignore files/directories matching this pattern')
 
 
 def find_transmission_dir():
@@ -49,7 +51,7 @@ def listdir(path):
     return os.listdir(path)
 
 
-def compare_resume_vs_download(resume_dir, download_dir, incomplete_dir):
+def compare_resume_vs_download(resume_dir, download_dir, incomplete_dir, ignore_pattern):
     resume_files = [fn.rsplit(u'.', 2)[0] for fn in listdir(resume_dir)]
     downloaded_files = listdir(download_dir)
 
@@ -60,8 +62,13 @@ def compare_resume_vs_download(resume_dir, download_dir, incomplete_dir):
     else:
         incomplete_subdir = None
 
+    if ignore_pattern:
+        ignore_pattern = re.compile(ignore_pattern, re.IGNORECASE)
+
     return [fn for fn in downloaded_files
-            if fn != incomplete_subdir and fn not in resume_files]
+            if fn != incomplete_subdir
+            and fn not in resume_files
+            and (ignore_pattern is None or not ignore_pattern.match(fn))]
 
 
 def movefile(source_path, dest_path, filename):
@@ -102,7 +109,7 @@ def main(args):
         incomplete_dir = transmission_config['incomplete-dir']
         if not transmission_config['incomplete-dir-enabled']:
             raise RuntimeError('incomplete-dir is not enabled, and partial downloads are not yet supported.')
-        leftovers = compare_resume_vs_download(resume_dir, download_dir, incomplete_dir)
+        leftovers = compare_resume_vs_download(resume_dir, download_dir, incomplete_dir, args.ignore)
         for fn in leftovers:
             if args.move_to:
                 movefile(download_dir, args.move_to, fn)
