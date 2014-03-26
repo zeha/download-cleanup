@@ -5,6 +5,7 @@ Modern file copy for Linux 2.6.32+.
 """
 
 import os
+import sys
 import errno
 import fcntl
 import ctypes
@@ -42,19 +43,24 @@ except IOError:
     CHUNKSIZE = 8 * 64 * 1024
 
 
-libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)
-try:
-    sendfile = libc.sendfile
-    c_loff_t = ctypes.c_uint64
-    c_loff_t_p = ctypes.POINTER(c_loff_t)
-    sendfile.argtypes = [ctypes.c_int, ctypes.c_int, c_loff_t_p, ctypes.c_size_t]
-    sendfile.restype = ctypes.c_ssize_t
-except AttributeError:
-    sendfile = None
+sendfile = None
+if sys.platform.startswith('linux'):
+    libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)
+    try:
+        sendfile = libc.sendfile
+        c_loff_t = ctypes.c_uint64
+        c_loff_t_p = ctypes.POINTER(c_loff_t)
+        sendfile.argtypes = [ctypes.c_int, ctypes.c_int, c_loff_t_p, ctypes.c_size_t]
+        sendfile.restype = ctypes.c_ssize_t
+    except AttributeError:
+        pass
 
 
 def reflink_fps(source_fp, dest_fp):
     """Use btrfs-specific reflink ioctl to link two file contents together."""
+    if not sys.platform.startswith('linux'):
+        raise NotImplementedError('Not implemented on non-Linux platforms')
+
     # BTRFS_IOC_CLONE _IOW (BTRFS_IOCTL_MAGIC, 9, int)
     sizeof_int = 4
     ioctl_number = (_IOC_WRITE << _IOC_DIRSHIFT) | \
@@ -98,7 +104,7 @@ def splice_fps(source_fp, dest_fp):
             raise NotImplementedError('Unsupported splice() implementation')
 
 
-def sendfile_fps(source_fp, dest_fp):
+def sendfile_linux_fps(source_fp, dest_fp):
     if not sendfile:
         raise NotImplementedError('No sendfile() implementation')
 
@@ -133,7 +139,7 @@ def copy_data(source_fp, dest_fp):
     source_pos = source_fp.tell()
     dest_pos = dest_fp.tell()
 
-    for copy_fn in (reflink_fps, sendfile_fps, splice_fps, readwrite_fds):
+    for copy_fn in (reflink_fps, sendfile_linux_fps, splice_fps, readwrite_fds):
         try:
             copy_fn(source_fp, dest_fp)
             return
@@ -143,3 +149,10 @@ def copy_data(source_fp, dest_fp):
             continue
 
     raise NotImplementedError('No copy_fn works on this platform')
+
+
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.DEBUG)
+    with open('src', 'rb') as test_source_fp:
+        with open('dst', 'wb') as test_dest_fp:
+            copy_data(test_source_fp, test_dest_fp)
