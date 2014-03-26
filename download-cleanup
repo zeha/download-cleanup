@@ -24,7 +24,13 @@ argparser.add_argument('--move-to', type=unicode, help='If given, leftover files
 
 
 def find_transmission_dir():
-    for path in [u'~/.config/transmission-daemon', u'~/Library/Application Support/Transmission']:
+    transmission_home = os.getenv('TRANSMISSION_HOME', '')
+    if transmission_home:
+        possible_paths = [transmission_home]
+    else:
+        possible_paths = [u'~/.config/transmission', u'~/.config/transmission-daemon',
+                          u'~/Library/Application Support/Transmission']
+    for path in possible_paths:
         path = os.path.expanduser(path)
         fn = os.path.join(path, u'settings.json')
         if os.path.isfile(fn):
