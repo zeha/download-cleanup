@@ -81,6 +81,10 @@ def movefile(source_path, dest_path, filename):
             os.mkdir(dest_fn)
         for fn in listdir(source_fn):
             movefile(source_fn, dest_fn, fn)
+        try:
+            os.rmdir(source_fn)
+        except IOError as ex:
+            logger.error("Removing directory %s failed (ignored): %s", source_fn, ex.strerror)
         return
 
     if os.path.exists(dest_fn):
