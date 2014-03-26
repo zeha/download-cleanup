@@ -1,0 +1,103 @@
+#!/usr/bin/env python
+
+"""
+Removes (or moves) files from your Transmission(-daemon) Download
+folder that are no longer referenced by any resumable torrents.
+"""
+
+import os
+import sys
+import json
+import logging
+import argparse
+
+# local module
+from filecopy import copy_data
+
+logger = logging.getLogger(__file__)
+
+argparser = argparse.ArgumentParser()
+argparser.add_argument('--debug', action='store_true', default=False)
+argparser.add_argument('--transmission-dir', type=unicode, help='Transmission state/config dir (auto-detected)')
+argparser.add_argument('--download-dir', type=unicode, help='Download directory (auto-detected)')
+argparser.add_argument('--move-to', type=unicode, help='If given, leftover files/dirs are moved to this path')
+
+
+def find_transmission_dir():
+    for path in [u'~/.config/transmission-daemon', u'~/Library/Application Support/Transmission']:
+        path = os.path.expanduser(path)
+        fn = os.path.join(path, u'settings.json')
+        if os.path.isfile(fn):
+            logger.debug("Found transmission directory %r", path)
+            return path
+
+
+def read_transmission_config(config_dir):
+    fn = os.path.join(config_dir, u'settings.json')
+    with open(fn, 'r') as fp:
+        return json.load(fp)
+
+
+def listdir(path):
+    assert type(path), unicode  # must be unicode, so listdir returns unicode strings
+    return os.listdir(path)
+
+
+def compare_resume_vs_download(resume_dir, download_dir):
+    resume_files = [fn.rsplit(u'.', 2)[0] for fn in listdir(resume_dir)]
+    downloaded_files = listdir(download_dir)
+    return [fn for fn in downloaded_files if fn not in resume_files]
+
+
+def movefile(source_path, dest_path, filename):
+    source_fn = os.path.join(source_path, filename)
+    dest_fn = os.path.join(dest_path, filename)
+    logger.debug('movefile(%s -> %s: %s)', source_path, dest_path, filename)
+
+    if os.path.isdir(source_fn):
+        if not os.path.exists(dest_fn):
+            os.mkdir(dest_fn)
+        for fn in listdir(source_fn):
+            movefile(source_fn, dest_fn, fn)
+        return
+
+    if os.path.exists(dest_fn):
+        raise StandardError('Not overwriting existing file %r' % dest_fn)
+
+    logger.info('Moving %r -> %r ...', source_fn, dest_fn)
+    with open(source_fn, 'rb') as source_fp:
+        with open(dest_fn, 'wb') as dest_fp:
+            try:
+                copy_data(source_fp, dest_fp)
+            except:
+                # failure -> remove incomplete destination file
+                os.unlink(dest_fn)
+                raise
+            # success -> remove source file
+            os.unlink(source_fn)
+
+
+def main(args):
+    logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO, format="%(levelname)s: %(message)s")
+    try:
+        transmission_dir = args.transmission_dir or find_transmission_dir()
+        transmission_config = read_transmission_config(transmission_dir)
+        resume_dir = os.path.join(transmission_dir, u'resume')  # apparently hard-coded in Transmission?
+        download_dir = args.download_dir or transmission_config['download-dir']
+        leftovers = compare_resume_vs_download(resume_dir, download_dir)
+        for fn in leftovers:
+            if args.move_to:
+                movefile(download_dir, args.move_to, fn)
+            else:
+                print fn
+            break
+    except StandardError as ex:
+        if args.debug:
+            logger.exception(ex)
+        else:
+            logger.error(ex)
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main(argparser.parse_args())
