@@ -90,7 +90,6 @@ def main(args):
                 movefile(download_dir, args.move_to, fn)
             else:
                 print fn
-            break
     except StandardError as ex:
         if args.debug:
             logger.exception(ex)
