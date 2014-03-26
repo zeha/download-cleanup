@@ -49,10 +49,19 @@ def listdir(path):
     return os.listdir(path)
 
 
-def compare_resume_vs_download(resume_dir, download_dir):
+def compare_resume_vs_download(resume_dir, download_dir, incomplete_dir):
     resume_files = [fn.rsplit(u'.', 2)[0] for fn in listdir(resume_dir)]
     downloaded_files = listdir(download_dir)
-    return [fn for fn in downloaded_files if fn not in resume_files]
+
+    incomplete_dir = os.path.abspath(incomplete_dir)
+    if os.path.commonprefix([download_dir, incomplete_dir]) == download_dir:
+        # incomplete_dir is subdir of download_dir
+        incomplete_subdir = incomplete_dir[len(download_dir) + 1:]
+    else:
+        incomplete_subdir = None
+
+    return [fn for fn in downloaded_files
+            if fn != incomplete_subdir and fn not in resume_files]
 
 
 def movefile(source_path, dest_path, filename):
@@ -90,7 +99,10 @@ def main(args):
         transmission_config = read_transmission_config(transmission_dir)
         resume_dir = os.path.join(transmission_dir, u'resume')  # apparently hard-coded in Transmission?
         download_dir = args.download_dir or transmission_config['download-dir']
-        leftovers = compare_resume_vs_download(resume_dir, download_dir)
+        incomplete_dir = transmission_config['incomplete-dir']
+        if not transmission_config['incomplete-dir-enabled']:
+            raise RuntimeError('incomplete-dir is not enabled, and partial downloads are not yet supported.')
+        leftovers = compare_resume_vs_download(resume_dir, download_dir, incomplete_dir)
         for fn in leftovers:
             if args.move_to:
                 movefile(download_dir, args.move_to, fn)
