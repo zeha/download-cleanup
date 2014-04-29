@@ -22,6 +22,7 @@ argparser.add_argument('--debug', action='store_true', default=False)
 argparser.add_argument('--transmission-dir', type=unicode, help='Transmission state/config dir (auto-detected)')
 argparser.add_argument('--download-dir', type=unicode, help='Download directory (auto-detected)')
 argparser.add_argument('--move-to', type=unicode, help='If given, leftover files/dirs are moved to this path')
+argparser.add_argument('--delete', action='store_true', default=False, help='If given, leftover files/dirs are deleted')
 argparser.add_argument('--ignore', help='Ignore files/directories matching this pattern')
 
 
@@ -103,6 +104,19 @@ def movefile(source_path, dest_path, filename):
             os.unlink(source_fn)
 
 
+def deletefile(source_path, filename):
+    source_fn = os.path.join(source_path, filename)
+    if os.path.isdir(source_fn):
+        for fn in listdir(source_fn):
+            deletefile(source_fn, fn)
+        try:
+            os.rmdir(source_fn)
+        except IOError as ex:
+            logger.error("Removing directory %s failed: %s", source_fn, ex.strerror)
+    else:
+        os.unlink(source_fn)
+
+
 def main(args):
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO, format="%(levelname)s: %(message)s")
     try:
@@ -117,6 +131,8 @@ def main(args):
         for fn in leftovers:
             if args.move_to:
                 movefile(download_dir, args.move_to, fn)
+            elif args.delete:
+                deletefile(download_dir, fn)
             else:
                 print fn
     except StandardError as ex:
